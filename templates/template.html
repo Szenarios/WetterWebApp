@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <title>Deutschland Wetterkarte</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
+</head>
+<body>
+    <div class="main-container">
+        <div class="left-panel" id="main-left-panel">
+            <div>
+                <div id="standort-info">
+                    <h2>Standort Daten</h2>
+                    <p id="coordsInfo">Noch kein Standort ausgewählt.</p>
+                </div>
+                <div id="weather-info">
+                    <h2>Wetterdaten</h2>
+                    <p>Bitte setze einen Pin auf der Karte.</p>
+                </div>
+            </div>
+
+            <div>
+                <div class="radius-container">
+                    <div class="date-container">
+                        <label for="startDate">Startdatum:</label>
+                        <input type="date" id="startDate">
+
+                        <label for="endDate">Enddatum:</label>
+                        <input type="date" id="endDate">
+                    </div>
+
+                    <label for="radiusSlider">Radius:</label>
+                    <input type="range" id="radiusSlider" min="1" max="100" value="15">
+                    <span id="radiusValue">15 km</span>
+                    <!--<button id="calcBtn" class="calc-button">Berechnen</button>-->
+                </div>
+
+                <div class="reload-container">
+                    <button id="reloadBtn" class="reload-button">Reloade Datenbank</button>
+                </div>
+
+            </div>
+        </div>
+
+        <div class="right-panel">
+            <div id="map"></div>
+        </div>
+    </div>
+
+    <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+    <script src="{{ url_for('static', filename='skript.js') }}"></script>
+ <!--Skript für Slider-->
+    <script>
+        // Slider-Elemente holen
+        const slider = document.getElementById("radiusSlider");
+        const radiusValue = document.getElementById("radiusValue");
+        const calcBtn = document.getElementById("calcBtn");
+
+        // Slider bewegt → Wert aktualisieren
+       slider.addEventListener("input", () => {
+            radiusValue.textContent = slider.value + " km";
+            slider.style.setProperty('--value', slider.value + "%");
+        });
+
+        // Button klick → Aktion starten
+        calcBtn.addEventListener("click", () => {
+            alert("Aktueller Radius: " + slider.value + " km");
+            // Hier kannst du Flask-API Call machen oder Kreis zeichnen
+        });
+    </script>
+</body>
+</html>

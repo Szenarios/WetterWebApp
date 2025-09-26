@@ -1,0 +1,22 @@
+from main import db
+
+class measurement(db.dataentry):
+    measurement_ID = db.Colum(db.Integer, primary_key=True)
+    Sation_ID = db.Colum(db.Integer, foering_key=True)
+    measurement_Datum = db.Colunm(db.Float)
+    QN_3 = db.Colunm(db.Float)
+    FX = db.Colunm(db.Float)
+    FM = db.Colunm(db.Float)
+    QN_4 = db.Colunm(db.Float)
+    RSK = db.Colunm(db.Float)
+    RSKf = db.Colunm(db.Float)
+    SHK = db.Colunm(db.Float)
+    SHK_TAG = db.Colunm(db.Float)
+    NM = db.Colunm(db.Float)
+    VPM = db.Colunm(db.Float)
+    PM = db.Colunm(db.Float)
+    TMK = db.Colunm(db.Float)
+    TXK = db.Colunm(db.Float)
+    TNK = db.Colunm(db.Float)
+    TGK = db.Colunm(db.Float)
+    eor = db.Colunm(db.String)
