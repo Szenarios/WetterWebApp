@@ -8,6 +8,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const slider = document.getElementById('radiusSlider');
     const radiusValue = document.getElementById('radiusValue');
     const reloadBtn = document.getElementById('reloadBtn');
+    const dashboard_btn = document.getElementById('dashboard_btn');
 
     const germanyBounds = L.latLngBounds(
         [47.270111, 5.866342],
@@ -28,28 +29,37 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const formatWeather = (data) => `
         <div class="grid gap-4 text-sm">
-            <div class="rounded-2xl border border-white/5 bg-slate-950/60 p-4 shadow-inner shadow-black/30">
+            <div class="rounded-2xl border border-white/5 bg-slate-950/60 p-3 shadow-inner shadow-black/30">
                 <p class="text-xs uppercase tracking-[0.2em] text-slate-400">Ort</p>
                 <p class="mt-2 text-lg font-semibold text-white">${data.location || 'Unbekannt'}</p>
             </div>
-            <div class="grid grid-cols-1 gap-4 sm:grid-cols-3">
-                <div class="rounded-2xl border border-white/5 bg-slate-950/60 p-4 shadow-inner shadow-black/30">
+
+                <div class="rounded-2xl border border-white/5 bg-slate-950/60 p-3 shadow-inner shadow-black/30">
                     <p class="text-xs uppercase tracking-[0.2em] text-slate-400">Temperatur</p>
                     <p class="mt-3 text-2xl font-semibold text-white">${data.temperature || '—'}</p>
                 </div>
-                <div class="rounded-2xl border border-white/5 bg-slate-950/60 p-4 shadow-inner shadow-black/30">
-                    <p class="text-xs uppercase tracking-[0.2em] text-slate-400">Luftfeuchtigkeit</p>
-                    <p class="mt-3 text-lg font-semibold text-white">${data.humidity || '—'}</p>
+                <div class="rounded-2xl border border-white/5 bg-slate-950/60 p-3 shadow-inner shadow-black/30">
+                    <p class="text-xs uppercase tracking-[0.2em] text-slate-400">Niederschlag</p>
+                    <p class="mt-3 text-lg font-semibold text-white">${data.niederschlag || '—'}</p>
                 </div>
-                <div class="rounded-2xl border border-white/5 bg-slate-950/60 p-4 shadow-inner shadow-black/30">
+                <div class="rounded-2xl border border-white/5 bg-slate-950/60 p-3 shadow-inner shadow-black/30">
                     <p class="text-xs uppercase tracking-[0.2em] text-slate-400">Radius</p>
                     <p class="mt-3 text-lg font-semibold text-white">${slider ? `${slider.value} km` : '—'}</p>
                 </div>
+
+            <div class="rounded-2xl border border-white/5 bg-slate-950/60 p-3 shadow-inner shadow-black/30">
+                <p class="text-xs uppercase tracking-[0.2em] text-slate-400">Wind</p>
+                <p class="mt-3 text-lg font-semibold text-white">${data.wind || '—'}</p>
             </div>
-            <div class="rounded-2xl border border-cyan-500/40 bg-cyan-500/10 p-4 text-sm text-cyan-100 backdrop-blur">
+            <div class="rounded-2xl border border-white/5 bg-slate-950/60 p-3 shadow-inner shadow-black/30">
+                <p class="text-xs uppercase tracking-[0.2em] text-slate-400">Bewölkung</p>
+                <p class="mt-3 text-lg font-semibold text-white">${data.bewoelkung || '—'}</p>
+            </div>
+            <div class="rounded-2xl border border-cyan-500/40 bg-cyan-500/10 p-3 text-sm text-cyan-100 backdrop-blur">
                 <p class="text-xs uppercase tracking-[0.2em] text-cyan-300">Beschreibung</p>
                 <p class="mt-2 leading-relaxed">${data.description || 'Keine weiteren Details verfügbar.'}</p>
             </div>
+
         </div>
     `;
 
@@ -110,10 +120,41 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
+    if (dashboard_btn) {
+        dashboard_btn.addEventListener('click', () => {
+            if (!marker){
+                alert('Wähle zuerst einen Standort aus!');
+                return
+            }
+            var latLng = marker.getLatLng();
+            var lat = latLng.lat
+            var lng = latLng.lng
+            var radius = slider.value
+            const startDate = startDateInput?.value;
+            const endDate = endDateInput?.value;
+
+            if (!startDate || !endDate) {
+                alert('Bitte Start- und Enddatum auswählen.');
+                return;
+            }
+
+            if (new Date(startDate) > new Date(endDate)) {
+                alert('Das Enddatum muss nach dem Startdatum liegen.');
+                return;
+            }
+
+            const url = `/dashboard?lat=${lat}&lon=${lng}&radius=${radius}&startDate=${startDate}&endDate=${endDate}`;
+
+            // Weiterleiten
+            window.location.href = url;
+        });
+    }
+
     if (uploadForm) {
         uploadForm.addEventListener('submit', (event) => {
             event.preventDefault();
             const formData = new FormData(uploadForm);
+            console.log(formData);
             fetch('/upload', {
                 method: 'POST',
                 body: formData
@@ -168,7 +209,13 @@ document.addEventListener('DOMContentLoaded', () => {
         fetch('/get_weather', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ lat, lon: lng })
+            body: JSON.stringify({
+                lat,
+                lon: lng,
+                radius: slider ? slider.value : null,
+                startDate,
+                endDate
+            })
         })
             .then((res) => {
                 if (!res.ok) {

@@ -1,0 +1,503 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Wetter Dashboard</title>
+
+  <style>
+    :root {
+      color-scheme: dark;
+      --primary-color: #22d3ee;
+      --bg-color: #0f172a;
+      --text-color: #f1f5f9;
+      --card-bg: #1e293b;
+    }
+
+    body {
+      margin: 0;
+      background: var(--bg-color);
+      color: var(--text-color);
+      font-family: 'Segoe UI', sans-serif;
+    }
+
+    .container {
+      max-width: 1400px;
+      margin: auto;
+      padding: 1.5rem;
+      display: flex;
+      flex-direction: column;
+      gap: 1.5rem;
+    }
+
+    .section {
+      background: var(--card-bg);
+      padding: 1.5rem;
+      border-radius: 1rem;
+      box-shadow: 0 4px 10px rgba(0,0,0,0.3);
+    }
+
+    h2 {
+      color: var(--primary-color);
+      margin-top: 0;
+    }
+
+    .table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.9rem;
+    }
+
+    .table th, .table td {
+      border-bottom: 1px solid #475569;
+      padding: 0.5rem;
+      text-align: right;
+    }
+
+    .table th {
+      text-align: left;
+    }
+
+    .table-striped tbody tr:nth-child(odd) {
+      background-color: #334155;
+    }
+
+    .pagination {
+      display: flex;
+      justify-content: center;
+      gap: 4px;
+      margin-top: 12px;
+      flex-wrap: wrap;
+    }
+
+    .pagination button {
+      background: #475569;
+      color: white;
+      border: none;
+      padding: 6px 10px;
+      border-radius: 6px;
+      cursor: pointer;
+    }
+
+    .pagination button:disabled {
+      opacity: 0.4;
+      cursor: not-allowed;
+    }
+
+    .pagination .active {
+      background: var(--primary-color);
+      font-weight: bold;
+    }
+
+    .back-btn {
+      display: inline-block;
+      background: #334155;
+      color: var(--text-color);
+      padding: 8px 14px;
+      border-radius: 8px;
+      text-decoration: none;
+      font-weight: bold;
+      border: 1px solid #475569;
+      transition: 0.2s;
+    }
+    .back-btn:hover {
+      background: #475569;
+    }
+
+    /* Aggregation buttons */
+    .agg-row { margin-bottom: 12px; display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
+    .agg-btn {
+      background: #475569;
+      color: white;
+      border: none;
+      padding: 8px 12px;
+      border-radius: 8px;
+      cursor: pointer;
+    }
+    .agg-btn.active { background: var(--primary-color); color: #000; font-weight: bold; }
+
+    /* Chart full width inside container */
+    #chartCanvas {
+      width: 100% !important;
+      max-width: 100% !important;
+    }
+
+    /* small note */
+    .note { opacity: 0.75; font-size: 0.9rem; margin-bottom: 8px; }
+  </style>
+</head>
+<body>
+
+<div class="container">
+
+  <!-- Back Button -->
+  <a class="back-btn" href="/">← Zurück zur Übersicht</a>
+
+  <!-- Chart Section -->
+  <div class="section">
+    <h2>Grafische Auswertung</h2>
+
+    <div class="agg-row">
+      <div>
+        <button class="agg-btn" data-agg="day">Tagesauswertung</button>
+        <button class="agg-btn" data-agg="month">Monatsauswertung</button>
+        <button class="agg-btn" data-agg="year">Jahresauswertung</button>
+      </div>
+      <div class="note">Klicke in die Legende, um Reihen ein- oder auszublenden. Alle Reihen sind initial ausgeblendet.</div>
+    </div>
+
+    <div style="position: relative; width: 100%; height: 450px;">
+      <canvas id="chartCanvas"></canvas>
+    </div>
+  </div>
+
+  <!-- Table Section -->
+  <div class="section">
+    <h2>Tabellarische Daten</h2>
+    <table class="table table-striped">
+      <thead id="table-head"></thead>
+      <tbody id="table-body"></tbody>
+    </table>
+    <div id="pagination" class="pagination"></div>
+  </div>
+
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+<script>
+/* ============================
+   Daten vom Backend (Jinja)
+   `measurement_Datum` ist "YYYY-MM-DD"
+   ============================ */
+const allData = {{ data | default([]) | tojson | safe }};
+
+if (!Array.isArray(allData) || !allData.length) {
+  // Keine Daten: Anzeige beenden (oder du kannst stattdessen eine freundliche Meldung rendern)
+  document.body.innerHTML = "<div style='padding:20px;color:#fff;background:#111'>Keine Daten vorhanden</div>";
+  throw new Error("Keine Daten vorhanden");
+}
+
+/* ============================
+   Spalten & Keys (Tabelle + Chart keys)
+   ============================ */
+const allKeys = Object.keys(allData[0]);
+
+const priority = ["station_ID", "measurement_ID", "measurement_Datum"];
+
+const orderedPriority = priority.filter(k => allKeys.includes(k));
+
+const remaining = allKeys
+  .filter(k => !orderedPriority.includes(k))
+  .sort();
+
+const tableKeys = [...orderedPriority, ...remaining];
+
+// Chart: blacklist (nicht anzeigen)
+const graphBlacklist = ["measurement_ID", "station_ID", "eor", "measurement_Datum"];
+
+// numericKeys: numeric fields to show in chart
+const numericKeys = allKeys.filter(k =>
+  !graphBlacklist.includes(k) &&
+  allData.some(r => typeof r[k] === "number")
+);
+
+/* ============================
+   Helper: random color
+   ============================ */
+function randomColor() {
+  // HSL for nicer distribution
+  const h = Math.floor(Math.random() * 360);
+  return `hsl(${h} 70% 60%)`;
+}
+
+/* ============================
+   Chart initial erstellen
+   ============================ */
+let currentAggregation = "day"; // default
+
+// helper to build datasets for a given datasetKeys and given data array
+function buildDatasetsFor(dataArray) {
+  return numericKeys.map(key => ({
+    label: key,
+    data: dataArray.map(r => (typeof r[key] === "number" ? r[key] : null)),
+    borderColor: randomColor(),
+    borderWidth: 2,
+    fill: false,
+    hidden: true // initial ausgeblendet
+  }));
+}
+
+const initialLabels = allData.map(r => r.measurement_Datum);
+const initialDatasets = buildDatasetsFor(allData);
+
+const ctx = document.getElementById("chartCanvas").getContext("2d");
+const chart = new Chart(ctx, {
+  type: "line",
+  data: {
+    labels: initialLabels,
+    datasets: initialDatasets
+  },
+  options: {
+    responsive: true,
+    maintainAspectRatio: false,
+    interaction: { mode: 'index', intersect: false },
+    plugins: {
+      legend: {
+        display: true,
+        onClick: (e, legendItem) => {
+          const index = legendItem.datasetIndex;
+          const meta = chart.getDatasetMeta(index);
+          meta.hidden = meta.hidden === null ? !chart.data.datasets[index].hidden : null;
+          chart.update();
+        }
+      },
+      tooltip: {
+        enabled: true,
+        mode: 'index',
+        intersect: false
+      },
+      decimation: {
+        enabled: true,
+        algorithm: "lttb",
+        samples: 2000   // maximale Punkte
+      }
+    },
+    scales: {
+      x: {
+        ticks: { autoSkip: true, maxTicksLimit: 20 }
+      },
+      y: { beginAtZero: false }
+    }
+  }
+});
+
+/* ============================
+   Aggregation Funktionen
+   - measurement_Datum format: "YYYY-MM-DD"
+   - day: raw allData (sorted)
+   - month: group by YYYY-MM -> average of days
+   - year: group months by YYYY -> average of months
+   ============================ */
+
+function parseDateString(s) {
+  // expects "YYYY-MM-DD"
+  const parts = String(s).split("-");
+  if (parts.length < 3) return null;
+  const y = parseInt(parts[0], 10);
+  const m = parseInt(parts[1], 10);
+  const d = parseInt(parts[2], 10);
+  if (Number.isNaN(y) || Number.isNaN(m) || Number.isNaN(d)) return null;
+  return { y, m, d };
+}
+
+// sort helper by measurement_Datum (strings YYYY-MM-DD sort naturally)
+function sortByDate(arr) {
+  return arr.slice().sort((a,b) => a.measurement_Datum.localeCompare(b.measurement_Datum));
+}
+
+function aggregateMonthlyFromDaily(data) {
+  // group by YYYY-MM
+  const map = Object.create(null);
+  data.forEach(row => {
+    const d = parseDateString(row.measurement_Datum);
+    if (!d) return;
+    const key = `${String(d.y).padStart(4,'0')}-${String(d.m).padStart(2,'0')}`;
+    if (!map[key]) {
+      map[key] = { count: 0 };
+      // initialize numeric sums
+      numericKeys.forEach(k => map[key][k] = 0);
+    }
+    map[key].count++;
+    numericKeys.forEach(k => {
+      const v = row[k];
+      if (typeof v === 'number') map[key][k] += v;
+    });
+  });
+
+  const result = [];
+  for (const key of Object.keys(map)) {
+    const entry = { measurement_Datum: key };
+    numericKeys.forEach(k => {
+      const sum = map[key][k];
+      const count = map[key].count || 1;
+      entry[k] = Math.round((sum / count) * 100) / 100;
+    });
+    result.push(entry);
+  }
+
+  // sort by label (YYYY-MM)
+  result.sort((a,b) => a.measurement_Datum.localeCompare(b.measurement_Datum));
+  return result;
+}
+
+function aggregateYearlyFromMonthly(monthlyData) {
+  // monthlyData entries have measurement_Datum = "YYYY-MM"
+  const map = Object.create(null);
+  monthlyData.forEach(row => {
+    const parts = row.measurement_Datum.split("-");
+    const year = parts[0];
+    if (!map[year]) {
+      map[year] = { count: 0 };
+      numericKeys.forEach(k => map[year][k] = 0);
+    }
+    map[year].count++;
+    numericKeys.forEach(k => {
+      const v = row[k];
+      if (typeof v === 'number') map[year][k] += v;
+    });
+  });
+
+  const result = [];
+  for (const year of Object.keys(map)) {
+    const entry = { measurement_Datum: year };
+    numericKeys.forEach(k => {
+      const sum = map[year][k];
+      const count = map[year].count || 1;
+      entry[k] = Math.round((sum / count) * 100) / 100;
+    });
+    result.push(entry);
+  }
+
+  // sort by year
+  result.sort((a,b) => a.measurement_Datum.localeCompare(b.measurement_Datum));
+  return result;
+}
+
+/* ============================
+   View state: which data is currently rendered (affects table + pagination)
+   ============================ */
+let allDataRendered = sortByDate(allData); // default day view
+
+/* ============================
+   Pagination & Table rendering
+   ============================ */
+
+let currentPage = 1;
+const rowsPerPage = 50;
+let totalPages = Math.max(1, Math.ceil(allDataRendered.length / rowsPerPage));
+
+function renderTableHeader() {
+  const thead = document.getElementById("table-head");
+  thead.innerHTML = `<tr>${tableKeys.map(k => `<th>${k}</th>`).join('')}</tr>`;
+}
+
+function renderTablePage(page = 1) {
+  currentPage = page;
+  const tbody = document.getElementById("table-body");
+  tbody.innerHTML = "";
+
+  totalPages = Math.max(1, Math.ceil(allDataRendered.length / rowsPerPage));
+  const start = (page - 1) * rowsPerPage;
+  const end = start + rowsPerPage;
+  const pageData = allDataRendered.slice(start, end);
+
+  pageData.forEach(row => {
+    const tr = document.createElement("tr");
+    tr.innerHTML = tableKeys.map(k => `<td>${row[k] ?? ""}</td>`).join('');
+    tbody.appendChild(tr);
+  });
+}
+
+function renderPagination() {
+  const pager = document.getElementById("pagination");
+  pager.innerHTML = "";
+
+  function btn(label, page, disabled=false, active=false) {
+    const b = document.createElement("button");
+    b.textContent = label;
+    if (active) b.classList.add("active");
+    b.disabled = disabled;
+    if (!disabled && !active) {
+      b.onclick = () => {
+        renderTablePage(page);
+        renderPagination();
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+      };
+    }
+    pager.appendChild(b);
+  }
+
+  btn("<<", 1, currentPage === 1);
+  btn("<", Math.max(1, currentPage - 1), currentPage === 1);
+
+  const start = Math.max(1, currentPage - 3);
+  const end = Math.min(totalPages, currentPage + 3);
+
+  if (start > 1) { btn("1",1); pager.append("..."); }
+
+  for (let i = start; i <= end; i++) btn(i, i, false, i === currentPage);
+
+  if (end < totalPages) { pager.append("..."); btn(totalPages, totalPages); }
+
+  btn(">", Math.min(totalPages, currentPage + 1), currentPage === totalPages);
+  btn(">>", totalPages, currentPage === totalPages);
+}
+
+/* ============================
+   Update view: chart + table + pagination
+   ============================ */
+
+function updateChartAndTableWith(dataArray) {
+  // update chart labels + datasets
+  chart.data.labels = dataArray.map(r => r.measurement_Datum);
+  numericKeys.forEach((key, idx) => {
+    chart.data.datasets[idx].data = dataArray.map(r => (typeof r[key] === "number" ? r[key] : null));
+  });
+  chart.update();
+
+  // update table datasource & pagination
+  allDataRendered = dataArray;
+  totalPages = Math.max(1, Math.ceil(allDataRendered.length / rowsPerPage));
+  renderTablePage(1);
+  renderPagination();
+}
+
+/* ============================
+   Aggregation Control (buttons)
+   ============================ */
+
+function setActiveAggButton(type) {
+  document.querySelectorAll('.agg-btn').forEach(b => b.classList.remove('active'));
+  const btn = document.querySelector(`.agg-btn[data-agg="${type}"]`);
+  if (btn) btn.classList.add('active');
+}
+
+document.querySelectorAll('.agg-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const type = btn.dataset.agg;
+    if (type === currentAggregation) return; // nothing to do
+
+    currentAggregation = type;
+    setActiveAggButton(type);
+
+    if (type === 'day') {
+      const dayData = sortByDate(allData);
+      // ensure chart datasets match length
+      updateChartAndTableWith(dayData);
+    } else if (type === 'month') {
+      const monthly = aggregateMonthlyFromDaily(allData);
+      updateChartAndTableWith(monthly);
+    } else if (type === 'year') {
+      const monthly = aggregateMonthlyFromDaily(allData);
+      const yearly = aggregateYearlyFromMonthly(monthly);
+      updateChartAndTableWith(yearly);
+    }
+  });
+});
+
+// initial state: Tagesansicht active
+renderTableHeader();
+setActiveAggButton('day');
+updateChartAndTableWith(allDataRendered);
+
+/* ============================
+   Ensure legend toggles continue to work when datasets change length
+   ============================ */
+// Chart.js legend handler remains valid because datasets keep same order (numericKeys)
+// If you'd like to reset visibility on aggregation change, you can toggle chart.data.datasets[i].hidden
+
+</script>
+
+</body>
+</html>
